@@ -24,14 +24,18 @@ def open_serial():
     # print(OmegaConf.to_yaml(cfg))
     ser = serial.Serial(
         "/dev/ttyUSB",
-        9600
+        9600,
+        parity=serial.PARITY_NONE,
+        stopbits=serial.EIGHTBITS,
+        timeout=0.5
     )
     try:
         yield ser
     finally:
         ser.close()
 
-
+# retrieve data from inverter
+# @return id, status, voltage_dc, current_dc, power_dc, voltage_ac, current_ac, power_ac, temp, yield
 def get_data_by_addr(addr):
     # retrieve data from inverter
     with open_serial() as ser:
