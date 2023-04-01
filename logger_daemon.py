@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import time
 import datetime
+import pytz
 
 import pandas as pd
 import serial
@@ -66,7 +67,8 @@ if __name__ == "__main__":
         data = get_data(INVERTER_IDs)
 
         # insert column with timestamp
-        data.insert(0, "timestamp", [datetime.datetime.now()] * len(data.index), allow_duplicates=True)
+        timestamp = datetime.isoformat(datetime.now(tz=pytz.timezone("Europe/Zurich")))
+        data.insert(0, "timestamp", [timestamp] * len(data.index), allow_duplicates=True)
         write_data(data, con)
 
         # wait till next minute
