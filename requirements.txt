@@ -1,0 +1,9 @@
+future==0.18.3
+iso8601==1.1.0
+numpy==1.24.2
+pandas==1.5.3
+pyserial==3.5
+python-dateutil==2.8.2
+pytz==2023.3
+PyYAML==6.0
+six==1.16.0
