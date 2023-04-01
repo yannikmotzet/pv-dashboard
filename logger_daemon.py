@@ -1,17 +1,26 @@
 from contextlib import contextmanager
+import time
+import datetime
 
 import pandas as pd
-import numpy as np
 import serial
-#import hydra
-#from omegaconf import DictConfig, OmegaConf
+import sqlite3
+# import hydra
+# from omegaconf import DictConfig, OmegaConf
 
-# open serial port of RS485 interface
+INVERTER_IDs = range(1, 6)
+DATA_COLUMNS = ["inverter_id", "status", "voltage_dc", "current_dc",
+                "power_dc", "voltage_ac", "current_ac", "power_ac", "temperature", "yield_day"]
+DATABASE = "pv_database"
+TABLE = "pv_monitoring"
+
+
 # TODO config with hydra
-#@hydra.main(version_base=None, config_path="config", config_name="config_serial")
+# @hydra.main(version_base=None, config_path="config", config_name="config_serial")
 @contextmanager
 def open_serial():
-    #print(OmegaConf.to_yaml(cfg))
+    # open serial port of RS485 interface
+    # print(OmegaConf.to_yaml(cfg))
     ser = serial.Serial(
         "/dev/ttyUSB",
         9600
@@ -21,8 +30,9 @@ def open_serial():
     finally:
         ser.close()
 
-# retrieve data from inverter
+
 def get_data_by_addr(addr):
+    # retrieve data from inverter
     with open_serial() as ser:
         query = "#0{}0\r\n".format(addr)
         ser.write(query.encode("ascii"))
@@ -30,25 +40,35 @@ def get_data_by_addr(addr):
         data = ser.read(100)
         data_split = str(data).split()
         data_split[0] = addr
-        
+
         # TODO check checksum
-        arr = np.array(data_split[:10])
-        return arr
+        df = pd.DataFrame(data=[data_split[:10]], columns=DATA_COLUMNS)
+        return df
 
-# retrieve data from all inverters
+
 def get_data(addrs):
-    arr = np.array((len(addrs), 10))
+    # retrieve data from all inverters
+    df = pd.DataFrame(columns=DATA_COLUMNS)
     for addr in addrs:
-        pass
+        df = pd.concat([df, get_data_by_addr(addr)], ignore_index=True)    
+    return df
 
 
-
-# save data to database
-def write_data():
-    pass
-
+def write_data(data, con):
+    # save data to database
+    data.to_sql(name=TABLE, con=con, if_exists='append', index=False)
 
 
 if __name__ == "__main__":
     # periodically retrieve data and save to database
-    get_data(range(1, 6))
+    while True:
+        con = sqlite3.connect(DATABASE)
+        data = get_data(INVERTER_IDs)
+
+        # insert column with timestamp
+        data.insert(0, "timestamp", [datetime.datetime.now()] * len(data.index), allow_duplicates=True)
+        write_data(data, con)
+
+        # wait till next minute
+        sleeptime = 60 - datetime.utcnow().second
+        time.sleep(sleeptime)
