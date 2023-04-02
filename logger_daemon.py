@@ -48,12 +48,11 @@ def get_data_by_addr(addr):
             data_split = str(data).split()
             data_split[0] = addr
             if len(data_split) >= 10:
-                break
+                # TODO check checksum
+                return pd.DataFrame(data=[data_split[:10]], columns=DATA_COLUMNS)
             counter+=1
 
-        # TODO check checksum
-        df = pd.DataFrame(data=[data_split[:10]], columns=DATA_COLUMNS)
-        return df
+        return None
 
 
 def get_data(addrs):
@@ -74,11 +73,11 @@ if __name__ == "__main__":
     while True:
         con = sqlite3.connect(DATABASE)
         data = get_data(INVERTER_IDs)
-
-        # insert column with timestamp
-        timestamp = datetime.isoformat(datetime.now(tz=pytz.timezone("Europe/Zurich")))
-        data.insert(0, "timestamp", [timestamp] * len(data.index), allow_duplicates=True)
-        write_data(data, con)
+        if data is not None:
+            # insert column with timestamp
+            timestamp = datetime.isoformat(datetime.now(tz=pytz.timezone("Europe/Zurich")))
+            data.insert(0, "timestamp", [timestamp] * len(data.index), allow_duplicates=True)
+            write_data(data, con)
 
         # wait till next minute
         sleeptime = 60 - datetime.utcnow().second
