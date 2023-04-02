@@ -1,8 +1,8 @@
 from contextlib import contextmanager
 import time
-import datetime
-import pytz
+from datetime import datetime
 
+import pytz
 import pandas as pd
 import serial
 import sqlite3
@@ -23,10 +23,10 @@ def open_serial():
     # open serial port of RS485 interface
     # print(OmegaConf.to_yaml(cfg))
     ser = serial.Serial(
-        "/dev/ttyUSB",
+        "/dev/ttyUSB0",
         9600,
         parity=serial.PARITY_NONE,
-        stopbits=serial.EIGHTBITS,
+        #stopbits=serial.EIGHTBITS,
         timeout=0.5
     )
     try:
@@ -39,12 +39,17 @@ def open_serial():
 def get_data_by_addr(addr):
     # retrieve data from inverter
     with open_serial() as ser:
-        query = "#0{}0\r\n".format(addr)
-        ser.write(query.encode("ascii"))
-        ser.flush()
-        data = ser.read(100)
-        data_split = str(data).split()
-        data_split[0] = addr
+        counter = 0
+        while counter <= 2:
+            query = "#0{}0\r\n".format(addr)
+            ser.write(query.encode("ascii"))
+            ser.flush()
+            data = ser.read(100)
+            data_split = str(data).split()
+            data_split[0] = addr
+            if len(data_split) >= 10:
+                break
+            counter+=1
 
         # TODO check checksum
         df = pd.DataFrame(data=[data_split[:10]], columns=DATA_COLUMNS)
