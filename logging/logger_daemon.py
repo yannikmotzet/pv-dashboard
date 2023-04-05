@@ -81,16 +81,14 @@ def minutes_to_days_db():
 
     # get max power and yield from DATABASE_MINUTES
     conn_minutes = sqlite3.connect(DATABASE_MINUTES)
-    data_minutes = pd.read_sql(
-        f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {unixtime_start} AND {unixtime_end}) GROUP BY inverter_id', conn_minutes)
-    data_minutes = data_minutes.merge(pd.read_sql(
-        f'SELECT inverter_id, yield_day FROM {TABLE_MINUTES} WHERE timestamp = (SELECT MAX(TIMESTAMP) FROM {TABLE_MINUTES} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end}) GROUP by inverter_id', conn_minutes))
+    data_minutes = pd.DataFrame()
+    for id in INVERTER_IDs:
+        data_minutes_tmp = pd.read_sql(f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {unixtime_start} AND {unixtime_end}) AND inverter_id = {id}', conn_minutes)
+        data_minutes_tmp = data_minutes_tmp.merge(pd.read_sql(f'SELECT inverter_id, yield_day FROM {TABLE_MINUTES} WHERE timestamp = (SELECT MAX(TIMESTAMP) FROM {TABLE_MINUTES} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end}) AND inverter_id = {id}', conn_minutes))
+        data_minutes = pd.concat([data_minutes, data_minutes_tmp], ignore_index=True)
     timestamp = int(time.mktime(datetime.now().timetuple()))
     data_minutes.insert(
         0, "timestamp", [timestamp] * len(data_minutes.index), allow_duplicates=True)
-    if len(data_minutes.index) != len(INVERTER_IDs):
-        print("minutes_to_days_db(): did not find all inverters in DATABASE_MINUTES")
-        return
 
     # update data in DATABASE_DAYS
     conn_days = sqlite3.connect(DATABASE_DAYS)
