@@ -65,7 +65,7 @@ def get_data(addrs):
     return df
 
 
-def write_data(data, con):
+def write_data(data):
     # save data to database
     conn = sqlite3.connect(DATABASE_MINUTES)
     data.to_sql(name=TABLE_MINUTES, con=conn, if_exists='append', index=False)
@@ -84,7 +84,7 @@ def minutes_to_days_db():
     data_minutes = pd.DataFrame()
     for id in INVERTER_IDs:
         data_minutes_tmp = pd.read_sql(f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {unixtime_start} AND {unixtime_end}) AND inverter_id = {id}', conn_minutes)
-        data_minutes_tmp = data_minutes_tmp.merge(pd.read_sql(f'SELECT inverter_id, yield_day FROM {TABLE_MINUTES} WHERE timestamp = (SELECT MAX(TIMESTAMP) FROM {TABLE_MINUTES} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end}) AND inverter_id = {id}', conn_minutes))
+        data_minutes_tmp = data_minutes_tmp.merge(pd.read_sql(f'SELECT inverter_id, yield_day FROM {TABLE_MINUTES} WHERE timestamp = (SELECT MAX(TIMESTAMP) FROM {TABLE_MINUTES} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end} AND inverter_id = {id}) AND inverter_id = {id}', conn_minutes))
         data_minutes = pd.concat([data_minutes, data_minutes_tmp], ignore_index=True)
     timestamp = int(time.mktime(datetime.now().timetuple()))
     data_minutes.insert(
