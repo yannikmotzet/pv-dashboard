@@ -93,7 +93,7 @@ def minutes_to_days_db():
     # update data in DATABASE_DAYS
     conn_days = sqlite3.connect(DATABASE_DAYS)
     data_days = pd.read_sql(
-        f'SELECT * FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {unixtime_start} AND {unixtime_end})', conn_days)
+        f'SELECT * FROM {TABLE_DAYS} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end}', conn_days)
     if len(data_days) > 0:
         # delete old data
         for index, row in data_days.iterrows():
@@ -115,7 +115,10 @@ if __name__ == "__main__":
                         * len(data.index), allow_duplicates=True)
             data["timestamp"] = data["timestamp"].astype(dtype=int)
             write_data(data)
-            minutes_to_days_db()
+            try:
+                minutes_to_days_db()
+            except Exception as e:
+                print(e)
 
         # wait till next minute
         sleeptime = 60 - datetime.utcnow().second
