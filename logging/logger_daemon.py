@@ -75,6 +75,7 @@ def minutes_to_days_db():
     date = datetime.now(tz=pytz.timezone("Europe/Zurich"))
     timestamp_start = date.replace(
         hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+    timestamp_start = timestamp_start.replace(tzinfo=None)
     timestamp_end = timestamp_start + timedelta(days=1)
     unixtime_start = int(time.mktime(timestamp_start.timetuple()))
     unixtime_end = int(time.mktime(timestamp_end.timetuple()))
