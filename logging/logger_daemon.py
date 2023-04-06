@@ -72,21 +72,20 @@ def write_data(data):
 
 
 def minutes_to_days_db():
-    date = datetime.now(tz=pytz.timezone("Europe/Zurich"))
-    timestamp_start = date.replace(
+    datetime_now = datetime.now(tz=pytz.timezone("Europe/Zurich"))
+    datetime_start = datetime_now.replace(
         hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
-    timestamp_start = timestamp_start.replace(tzinfo=None)
-    timestamp_end = timestamp_start + timedelta(days=1)
-    unixtime_start = int(time.mktime(timestamp_start.timetuple()))
-    unixtime_end = int(time.mktime(timestamp_end.timetuple()))
+    datetime_start = datetime_start.replace(tzinfo=None)
+    datetime_end = datetime_start + timedelta(days=1)
+    timestamp_start = int(time.mktime(datetime_start.timetuple()))
+    timestamp_end = int(time.mktime(datetime_end.timetuple()))
 
     # get max power and yield from DATABASE_MINUTES
     conn_minutes = sqlite3.connect(DATABASE_MINUTES)
-    data_minutes = pd.DataFrame()
-    for id in INVERTER_IDs:
-        data_minutes_tmp = pd.read_sql(f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {unixtime_start} AND {unixtime_end}) AND inverter_id = {id}', conn_minutes)
-        data_minutes_tmp = data_minutes_tmp.merge(pd.read_sql(f'SELECT inverter_id, yield_day FROM {TABLE_MINUTES} WHERE timestamp = (SELECT MAX(TIMESTAMP) FROM {TABLE_MINUTES} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end} AND inverter_id = {id}) AND inverter_id = {id}', conn_minutes))
-        data_minutes = pd.concat([data_minutes, data_minutes_tmp], ignore_index=True)
+    data_minutes = pd.read_sql(
+        f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id', conn_minutes)    
+    data_minutes = data_minutes.merge(pd.read_sql(
+        f'SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)', conn_minutes))
     timestamp = int(time.mktime(datetime.now().timetuple()))
     data_minutes.insert(
         0, "timestamp", [timestamp] * len(data_minutes.index), allow_duplicates=True)
@@ -94,7 +93,7 @@ def minutes_to_days_db():
     # update data in DATABASE_DAYS
     conn_days = sqlite3.connect(DATABASE_DAYS)
     data_days = pd.read_sql(
-        f'SELECT * FROM {TABLE_DAYS} WHERE timestamp BETWEEN {unixtime_start} AND {unixtime_end}', conn_days)
+        f'SELECT * FROM {TABLE_DAYS} WHERE timestamp BETWEEN {timestamp_start} AND {timestamp_end}', conn_days)
     if len(data_days) > 0:
         # delete old data
         for index, row in data_days.iterrows():
