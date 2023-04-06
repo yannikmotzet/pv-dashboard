@@ -13,27 +13,31 @@ TABLE_MINUTES = "minutes"
 DATABASE_DAYS = "database/pv_days.db"
 TABLE_DAYS = "days"
 
-
-def load_data_day(date, timezone="Europe/Zurich"):
-    datetime_start = datetime.combine(date, datetime.min.time())
+def get_unix_timestamps_day(day_date, timezone="Europe/Zurich"):
+    datetime_start = datetime.combine(day_date, datetime.min.time())
     datetime_start = pytz.timezone(timezone).localize(
         datetime_start).astimezone(pytz.utc)
     datetime_end = datetime_start + timedelta(days=1)
     timestamp_start = int(time.mktime(datetime_start.timetuple()))
-    timestart_end = int(time.mktime(datetime_end.timetuple()))
+    timestamp_end = int(time.mktime(datetime_end.timetuple()))
+    return timestamp_start, timestamp_end
+
+
+def load_power_curve_day(date, timezone="Europe/Zurich"):
+    timestamp_start, timestamp_end = get_unix_timestamps_day(date, timezone)
 
     data_day = pd.DataFrame(
         columns=["timestamp", "datetime", "power_all", "yield_all"])
-    data_day["timestamp"] = np.arange(timestamp_start, timestart_end)
+    data_day["timestamp"] = np.arange(timestamp_start, timestamp_end)
     data_day["power_all"] = np.zeros(
-        timestart_end - timestamp_start, dtype=int)
+        timestamp_end - timestamp_start, dtype=int)
     data_day["yield_all"] = np.zeros(
-        timestart_end - timestamp_start, dtype=int)
+        timestamp_end - timestamp_start, dtype=int)
 
     conn = sqlite3.connect(DATABASE_MINUTES)
     for id in INVERTER_IDs:
         data_tmp = pd.read_sql(
-            f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestart_end}) AND inverter_id = {id}', conn)
+            f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
         data_tmp = data_tmp.astype(int)
         data_day = data_day.merge(data_tmp)
         data_day["power_all"] += data_day[f"power_{id}"]
@@ -46,9 +50,32 @@ def load_data_day(date, timezone="Europe/Zurich"):
     return data_day
 
 
-def load_data_week(week):
-    # TODO
-    return
+def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
+    dates_list = [start_day+timedelta(days=x) for x in range((end_day-start_day).days)]
+
+    df = pd.DataFrame(columns=["date", "yield"])
+
+    conn = sqlite3.connect(DATABASE_DAYS)
+    for day in dates_list:
+        timestamp_start, timestamp_end = get_unix_timestamps_day(day, timezone)
+
+        data = pd.read_sql(f"SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)", conn)
+        total_yield = data["yield_day"].sum()
+
+        df = pd.concat([df, pd.DataFrame(data=[[day, total_yield]], columns=["date", "yield"])], ignore_index=True)
+
+    return df
+
+def load_data_period(start_day, end_day, timezone="Europe/Zurich"):
+    datetime_start = datetime.combine(start_day, datetime.min.time())
+    datetime_start = pytz.timezone(timezone).localize(
+    datetime_start).astimezone(pytz.utc)
+    datetime_end = datetime.combine(end_day, datetime.max.time())
+    datetime_end = pytz.timezone(timezone).localize(
+    datetime_end).astimezone(pytz.utc)
+    timestamp_start = int(time.mktime(datetime_start.timetuple()))
+    timestart_end = int(time.mktime(datetime_end.timetuple()))
+    pass
 
 
 if __name__ == "__main__":
@@ -98,7 +125,7 @@ if __name__ == "__main__":
         if datetime_day_slected > date_today:
             st.warning('Selected day is in the future!', icon="⚠️")
         else:
-            data = load_data_day(datetime_day_slected)
+            data = load_power_curve_day(datetime_day_slected)
             if len(data) == 0:
                 st.error("no data found", icon="⚠️")
             else:
@@ -146,4 +173,11 @@ if __name__ == "__main__":
             st.button("this week", key='week_today',
                       on_click=_on_click_week_today)
 
-        # TODO get data and do bar chart
+        if len(st.session_state.week_input) == 2:
+            data = load_yield_per_days(st.session_state.week_input[0], st.session_state.week_input[1])
+            if len(data) > 0:
+                st.bar_chart(data, x="date", y="yield")
+            else:
+                st.error("data not found")
+        else:
+            st.warning("select start and end date")
