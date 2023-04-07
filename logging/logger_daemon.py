@@ -55,7 +55,9 @@ def get_data_by_addr(addr):
 
             data_split = str(data).split()
             data_split[0] = addr
-            return pd.DataFrame(data=[data_split[:10]], columns=list(DATA_COLUMNS))
+            if len(data_split) >= 10:
+                return pd.DataFrame(data=[data_split[:10]], columns=list(DATA_COLUMNS))
+            fail_counter += 1
         return None
 
 
