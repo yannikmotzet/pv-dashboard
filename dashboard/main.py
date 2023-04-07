@@ -1,6 +1,7 @@
 import time
 from datetime import datetime, timedelta, date
 import pytz
+import calendar
 
 import numpy as np
 import pandas as pd
@@ -12,19 +13,39 @@ DATABASE_MINUTES = "database/pv_minutes.db"
 TABLE_MINUTES = "minutes"
 DATABASE_DAYS = "database/pv_days.db"
 TABLE_DAYS = "days"
+START_YEAR = 2011
 
-def get_unix_timestamps_day(day_date, timezone="Europe/Zurich"):
+# TODO merge week and month tab
+# TODO today view: add more data: temp, timestamp
+# TODO yield_per_day/month(): check sql request, maybe merge code
+# TODO tab all with get_yield_per_year()
+
+
+def get_timestamp_from_datetime(date_time, timezone="Europe/Zurich"):
+    if date_time.tzinfo is None:
+        date_time = pytz.timezone(timezone).localize(
+            date_time).astimezone(pytz.utc)
+    timestamp = int(time.mktime(date_time.timetuple()))
+    return timestamp
+
+
+def get_start_end_timestamps_day(day_date, timezone="Europe/Zurich"):
     datetime_start = datetime.combine(day_date, datetime.min.time())
-    datetime_start = pytz.timezone(timezone).localize(
-        datetime_start).astimezone(pytz.utc)
-    datetime_end = datetime_start + timedelta(days=1)
-    timestamp_start = int(time.mktime(datetime_start.timetuple()))
-    timestamp_end = int(time.mktime(datetime_end.timetuple()))
+    timestamp_start = get_timestamp_from_datetime(datetime_start, timezone)
+    timestamp_end = get_timestamp_from_datetime(
+        datetime_start + timedelta(days=1), timezone)
     return timestamp_start, timestamp_end
 
 
+def get_endday_month(date):
+    next_month = date.replace(day=28) + timedelta(days=4)
+    month_end_day = next_month - timedelta(days=next_month.day)
+    return month_end_day
+
+
 def load_power_curve_day(date, timezone="Europe/Zurich"):
-    timestamp_start, timestamp_end = get_unix_timestamps_day(date, timezone)
+    timestamp_start, timestamp_end = get_start_end_timestamps_day(
+        date, timezone)
 
     data_day = pd.DataFrame(
         columns=["timestamp", "datetime", "power_all", "yield_all"])
@@ -40,6 +61,8 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
             f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
         data_tmp = data_tmp.astype(int)
         data_day = data_day.merge(data_tmp)
+        data_day[f"power_{id}"] /= 1000
+        data_day[f"yield_{id}"] /= 1000
         data_day["power_all"] += data_day[f"power_{id}"]
         data_day["yield_all"] += data_day[f"yield_{id}"]
 
@@ -51,30 +74,54 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
 
 
 def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
-    dates_list = [start_day+timedelta(days=x) for x in range((end_day-start_day).days)]
+    dates_list = [start_day+timedelta(days=x)
+                  for x in range((end_day-start_day).days)]
 
     df = pd.DataFrame(columns=["date", "yield"])
 
     conn = sqlite3.connect(DATABASE_DAYS)
     for day in dates_list:
-        timestamp_start, timestamp_end = get_unix_timestamps_day(day, timezone)
+        timestamp_start, timestamp_end = get_start_end_timestamps_day(
+            day, timezone)
 
-        data = pd.read_sql(f"SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)", conn)
-        total_yield = data["yield_day"].sum()
+        data = pd.read_sql(
+            f"SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)", conn)
+        total_yield = data["yield_day"].sum() / 1000
 
-        df = pd.concat([df, pd.DataFrame(data=[[day, total_yield]], columns=["date", "yield"])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame(data=[[day, total_yield]], columns=[
+                       "date", "yield"])], ignore_index=True)
 
     return df
 
-def load_data_period(start_day, end_day, timezone="Europe/Zurich"):
-    datetime_start = datetime.combine(start_day, datetime.min.time())
-    datetime_start = pytz.timezone(timezone).localize(
-    datetime_start).astimezone(pytz.utc)
-    datetime_end = datetime.combine(end_day, datetime.max.time())
-    datetime_end = pytz.timezone(timezone).localize(
-    datetime_end).astimezone(pytz.utc)
-    timestamp_start = int(time.mktime(datetime_start.timetuple()))
-    timestart_end = int(time.mktime(datetime_end.timetuple()))
+
+def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
+    number_of_months = (end_date.year - start_date.year) * \
+        12 + end_date.month - start_date.month
+    month_start_day = datetime.combine(start_date, datetime.min.time())
+
+    df = pd.DataFrame(columns=["month", "yield"])
+
+    conn = sqlite3.connect(DATABASE_DAYS)
+    for i in range(number_of_months + 1):
+        month_end_day = get_endday_month(month_start_day)
+        timestamp_start = get_timestamp_from_datetime(
+            month_start_day, timezone)
+        timestamp_end = get_timestamp_from_datetime(month_end_day, timezone)
+
+        data = pd.read_sql(
+            f"SELECT inverter_id, SUM(yield_day) as yield FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id", conn)
+        total_yield = data["yield"].sum() / 1000
+
+        df = pd.concat([df, pd.DataFrame(data=[[month_start_day.month, total_yield]], columns=[
+                       "month", "yield"])], ignore_index=True)
+
+        month_start_day = month_start_day + timedelta(days=31)
+        month_start_day = month_start_day.replace(day=1)
+
+    return df
+
+
+def load_yield_per_year():
     pass
 
 
@@ -85,16 +132,6 @@ if __name__ == "__main__":
         page_icon="☀"
     )
     st.title("PV dashboard")
-
-    # with st.sidebar:
-    #     data = load_data_day(datetime.now(tz=pytz.timezone("Europe/Zurich")) - timedelta(days=1))
-    #     value_power, value_yield = 0, 0
-    #     if len(data) > 0:
-    #         value_power = data.iloc[-1]["power_all"]
-    #         value_yield = data.iloc[-1]["yield_all"]
-    #     st.metric(label="power", value=f'{value_power} W')
-    #     st.metric(label="yield", value=f'{value_yield} Wh')
-    #     st.text(f"{datetime.now().replace(microsecond=0)}")
 
     tab_day, tab_week, tab_month, tab_year, tab_all = st.tabs(
         ["day", "week", "month", "year", "all"])
@@ -130,10 +167,11 @@ if __name__ == "__main__":
                 st.error("no data found", icon="⚠️")
             else:
                 st.metric(label="yield",
-                          value=f'{data.iloc[-1]["yield_all"]/1000:.2f} kWh')
+                          value=f'{data.iloc[-1]["yield_all"]:.2f} kWh')
+                # TODO add columns
                 if datetime_day_slected == date_today:
                     st.metric(label="power",
-                              value=f'{data.iloc[-1]["power_all"]} W')
+                              value=f'{data.iloc[-1]["power_all"] / 1000 :.4f} kW')
                 st.line_chart(data, x="datetime", y=[
                               "power_all", "power_1", "power_2", "power_3", "power_4", "power_5"])
 
@@ -173,11 +211,60 @@ if __name__ == "__main__":
             st.button("this week", key='week_today',
                       on_click=_on_click_week_today)
 
-        if len(st.session_state.week_input) == 2:
-            data = load_yield_per_days(st.session_state.week_input[0], st.session_state.week_input[1])
-            if len(data) > 0:
-                st.bar_chart(data, x="date", y="yield")
-            else:
-                st.error("data not found")
-        else:
+        if not len(st.session_state.week_input) == 2:
             st.warning("select start and end date")
+        else:
+            data = load_yield_per_days(
+                st.session_state.week_input[0], st.session_state.week_input[1])
+            st.bar_chart(data, x="date", y="yield")
+
+    with tab_month:
+        def _on_click_month_today():
+            st.session_state.month_input = [month_start_day, month_end_day]
+
+        def _on_click_month_left():
+            month_start_day = st.session_state.month_input[0] - timedelta(
+                days=31)
+            month_start_day = month_start_day.replace(day=1)
+            next_month = month_start_day.replace(day=28) + timedelta(days=4)
+            month_end_day = next_month - timedelta(days=next_month.day)
+            st.session_state.month_input = [
+                month_start_day, month_end_day]
+
+        def _on_click_month_right():
+            month_start_day = st.session_state.month_input[0] + timedelta(
+                days=31)
+            month_start_day = month_start_day.replace(day=1)
+            next_month = month_start_day.replace(day=28) + timedelta(days=4)
+            month_end_day = next_month - timedelta(days=next_month.day)
+            st.session_state.month_input = [
+                month_start_day, month_end_day]
+
+        col1, col2, col3, col4, cols5 = st.columns([0.7, 3.5, 1, 1.6, 3])
+        date_today = date.today()
+        month_start_day = date_today.replace(day=1)
+        next_month = date_today.replace(day=28) + timedelta(days=4)
+        month_end_day = next_month - timedelta(days=next_month.day)
+        with col1:
+            st.button("<", key='month_left', on_click=_on_click_month_left)
+        with col2:
+            datetime_day_slected = st.date_input("month input", [
+                month_start_day, month_end_day], key="month_input", label_visibility="collapsed")
+        with col3:
+            st.button("\>", key='month_right', on_click=_on_click_month_right)
+        with col4:
+            st.button("this month", key='month_today',
+                      on_click=_on_click_month_today)
+
+        if not len(st.session_state.month_input) == 2:
+            st.warning("select start and end date")
+        else:
+            data = load_yield_per_days(
+                st.session_state.month_input[0], st.session_state.month_input[1])
+            st.bar_chart(data, x="date", y="yield")
+
+    with tab_year:
+        year = st.selectbox('year', range(
+            date.today().year, START_YEAR - 1, -1), label_visibility="collapsed")
+        data = load_yield_per_month(date(year, 1, 1), date(year, 12, 31))
+        st.bar_chart(data, x="month", y="yield")
