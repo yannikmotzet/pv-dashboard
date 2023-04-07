@@ -41,18 +41,21 @@ def get_data_by_addr(addr):
     # retrieve data from inverter
     # @return id, status, voltage_dc, current_dc, power_dc, voltage_ac, current_ac, power_ac, temp, yield
     with open_serial() as ser:
-        counter = 0
-        while counter <= 2:
-            query = "#0{}0\r\n".format(addr)
+        fail_counter = 0
+        while fail_counter <= 2:
+            query = f"#{addr:02d}0\r\n"
             ser.write(query.encode("ascii"))
             ser.flush()
             data = ser.read(100)
+
+            # check checksum
+            if sum(data[1:57]) % 256 != int.from_bytes(data[57:58], "little"):
+                fail_counter += 1
+                continue
+
             data_split = str(data).split()
             data_split[0] = addr
-            if len(data_split) >= 10:
-                # TODO check checksum
-                return pd.DataFrame(data=[data_split[:10]], columns=list(DATA_COLUMNS))
-            counter += 1
+            return pd.DataFrame(data=[data_split[:10]], columns=list(DATA_COLUMNS))
         return None
 
 
