@@ -64,7 +64,9 @@ def get_data(addrs):
     df = pd.DataFrame(columns=list(DATA_COLUMNS))
     df = df.astype(dtype=DATA_COLUMNS)
     for addr in addrs:
-        df = pd.concat([df, get_data_by_addr(addr)], ignore_index=True)
+        data =  get_data_by_addr(addr)
+        if data is not None:
+            df = pd.concat([df, get_data_by_addr(addr)], ignore_index=True)
     return df
 
 
