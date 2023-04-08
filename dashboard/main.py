@@ -18,7 +18,6 @@ START_YEAR = 2011
 # TODO merge week and month tab
 # TODO today view: add more data: temp, timestamp
 # TODO yield_per_day/month(): check sql request, maybe merge code
-# TODO tab all with get_yield_per_year()
 
 
 def get_timestamp_from_datetime(date_time, timezone="Europe/Zurich"):
@@ -37,10 +36,11 @@ def get_start_end_timestamps_day(day_date, timezone="Europe/Zurich"):
     return timestamp_start, timestamp_end
 
 
-def get_endday_month(date):
+def get_end_datetime_month(date):
     next_month = date.replace(day=28) + timedelta(days=4)
-    month_end_day = next_month - timedelta(days=next_month.day)
-    return month_end_day
+    month_end_date = next_month - timedelta(days=next_month.day)
+    month_end_datetime = datetime.combine(month_end_date, datetime.max.time())
+    return month_end_datetime
 
 
 def load_power_curve_day(date, timezone="Europe/Zurich"):
@@ -103,7 +103,7 @@ def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
 
     conn = sqlite3.connect(DATABASE_DAYS)
     for i in range(number_of_months + 1):
-        month_end_day = get_endday_month(month_start_day)
+        month_end_day = get_end_datetime_month(month_start_day)
         timestamp_start = get_timestamp_from_datetime(
             month_start_day, timezone)
         timestamp_end = get_timestamp_from_datetime(month_end_day, timezone)
@@ -120,9 +120,25 @@ def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
 
     return df
 
+def load_yield_per_year(start_year, end_year, timezone="Europe/Zurich"):
+    df = pd.DataFrame(columns=["year", "yield"])
+    conn = sqlite3.connect(DATABASE_DAYS)
+    for year in range(start_year, end_year + 1):
+        start_datetime = datetime(year=year, month=1, day=1)
+        end_datetime = datetime(year=year+1, month=1, day=1)
+        timestamp_start = get_timestamp_from_datetime(
+            start_datetime, timezone)
+        timestamp_end = get_timestamp_from_datetime(
+            end_datetime, timezone)
+        
+        data = pd.read_sql(
+            f"SELECT inverter_id, SUM(yield_day) as yield FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id", conn)
+        total_yield = data["yield"].sum() / 1000
 
-def load_yield_per_year():
-    pass
+        df = pd.concat([df, pd.DataFrame(data=[[year, total_yield]], columns=[
+                       "year", "yield"])], ignore_index=True)
+
+    return df
 
 
 if __name__ == "__main__":
@@ -166,12 +182,14 @@ if __name__ == "__main__":
             if len(data) == 0:
                 st.error("no data found", icon="⚠️")
             else:
-                st.metric(label="yield",
-                          value=f'{data.iloc[-1]["yield_all"]:.2f} kWh')
-                # TODO add columns
-                if datetime_day_slected == date_today:
-                    st.metric(label="power",
-                              value=f'{data.iloc[-1]["power_all"] / 1000 :.4f} kW')
+                mcols1, mcols2, mcols3= st.columns([3, 3, 5])
+                with mcols1:
+                    st.metric(label="yield",
+                            value=f'{data.iloc[-1]["yield_all"]:.2f} kWh')
+                with mcols2:
+                    if datetime_day_slected == date_today:
+                        st.metric(label="power",
+                                value=f'{data.iloc[-1]["power_all"]:.3f} kW')
                 st.line_chart(data, x="datetime", y=[
                               "power_all", "power_1", "power_2", "power_3", "power_4", "power_5"])
 
@@ -268,3 +286,7 @@ if __name__ == "__main__":
             date.today().year, START_YEAR - 1, -1), label_visibility="collapsed")
         data = load_yield_per_month(date(year, 1, 1), date(year, 12, 31))
         st.bar_chart(data, x="month", y="yield")
+
+    with tab_all:
+        data = load_yield_per_year(START_YEAR, date.today().year)
+        st.bar_chart(data, x="year", y="yield")
