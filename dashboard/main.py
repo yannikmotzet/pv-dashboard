@@ -24,7 +24,7 @@ def get_timestamp_from_datetime(date_time, timezone="Europe/Zurich"):
     if date_time.tzinfo is None:
         date_time = pytz.timezone(timezone).localize(
             date_time).astimezone(pytz.utc)
-    timestamp = int(time.mktime(date_time.timetuple()))
+    timestamp = int(date_time.timestamp())
     return timestamp
 
 

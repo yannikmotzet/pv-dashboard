@@ -82,10 +82,10 @@ def minutes_to_days_db():
     datetime_now = datetime.now(tz=pytz.timezone("Europe/Zurich"))
     datetime_start = datetime_now.replace(
         hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
-    datetime_start = datetime_start.replace(tzinfo=None)
+    datetime_start = datetime_start
     datetime_end = datetime_start + timedelta(days=1)
-    timestamp_start = int(time.mktime(datetime_start.timetuple()))
-    timestamp_end = int(time.mktime(datetime_end.timetuple()))
+    timestamp_start = int(datetime_start.timestamp())
+    timestamp_end = int(datetime_end.timestamp())
 
     # get max power and yield from DATABASE_MINUTES
     conn_minutes = sqlite3.connect(DATABASE_MINUTES)
@@ -93,7 +93,7 @@ def minutes_to_days_db():
         f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id', conn_minutes)    
     data_minutes = data_minutes.merge(pd.read_sql(
         f'SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)', conn_minutes))
-    timestamp = int(time.mktime(datetime.now().timetuple()))
+    timestamp = int(datetime.now().timestamp())
     data_minutes.insert(
         0, "timestamp", [timestamp] * len(data_minutes.index), allow_duplicates=True)
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         data = get_data(INVERTER_IDs)
         if data is not None:
             # insert column with timestamp
-            timestamp = int(time.mktime(datetime.now().timetuple()))
+            timestamp = int(datetime.now().timestamp())
             data.insert(0, "timestamp", [timestamp]
                         * len(data.index), allow_duplicates=True)
             data["timestamp"] = data["timestamp"].astype(dtype=int)
