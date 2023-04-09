@@ -75,7 +75,7 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
 
 def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
     dates_list = [start_day+timedelta(days=x)
-                  for x in range((end_day-start_day).days)]
+                  for x in range((end_day-start_day).days + 1)]
 
     df = pd.DataFrame(columns=["date", "yield"])
 
