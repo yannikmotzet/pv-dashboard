@@ -13,6 +13,7 @@ DATABASE_MINUTES = "database/pv_minutes.db"
 TABLE_MINUTES = "minutes"
 DATABASE_DAYS = "database/pv_days.db"
 TABLE_DAYS = "days"
+TIMEZONE = "Europe/Zurich"
 START_YEAR = 2011
 
 # TODO merge week and month tab
@@ -71,6 +72,12 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
             row["timestamp"], tz=pytz.utc).astimezone(pytz.timezone(timezone)).replace(tzinfo=None)
 
     return data_day
+
+
+def get_current_data():
+    conn = sqlite3.connect(DATABASE_MINUTES)
+    data = pd.read_sql(f"SELECT * FROM {TABLE_MINUTES} WHERE TIMESTAMP IS (SELECT MAX(timestamp) from {TABLE_MINUTES} GROUP BY inverter_id) GROUP BY inverter_id", conn)
+    return data
 
 
 def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
@@ -163,7 +170,7 @@ if __name__ == "__main__":
         def _on_click_right():
             st.session_state.day_input += timedelta(days=1)
 
-        col1, col2, col3, col4, cols5 = st.columns([0.7, 2, 1, 1.6, 5])
+        col1, col2, col3, col4, col5 = st.columns([0.7, 2, 1, 1.6, 5])
         date_today = date.today()
         with col1:
             st.button("<", key='day_left', on_click=_on_click_left)
@@ -182,16 +189,35 @@ if __name__ == "__main__":
             if len(data) == 0:
                 st.error("no data found", icon="⚠️")
             else:
-                mcols1, mcols2, mcols3= st.columns([3, 3, 5])
-                with mcols1:
+                mcol1, mcol2, mcol3= st.columns([3, 3, 5])
+                with mcol1:
                     st.metric(label="yield",
                             value=f'{data.iloc[-1]["yield_all"]:.2f} kWh')
-                with mcols2:
+                with mcol2:
                     if datetime_day_slected == date_today:
                         st.metric(label="power",
                                 value=f'{data.iloc[-1]["power_all"]:.3f} kW')
                 st.line_chart(data, x="datetime", y=[
                               "power_all", "power_1", "power_2", "power_3", "power_4", "power_5"])
+                if datetime_day_slected == date_today:                    
+                    current_data = get_current_data()
+                    if len(current_data) > 0:
+                        
+                        time_values, efficiency = [], []
+                        for i, row in current_data.iterrows():
+                            time_values.append(datetime.fromtimestamp(row["timestamp"], tz=pytz.utc).astimezone(pytz.timezone(TIMEZONE)).replace(tzinfo=None).strftime("%H:%M:%S"))
+                            try:
+                                efficiency_tmp = row["power_ac"] / row["power_dc"]
+                            except Exception:
+                                efficiency_tmp = np.nan
+                            efficiency.append(efficiency_tmp)
+
+                        current_data = current_data.drop("timestamp", axis=1)
+                        current_data.insert(1, "time", time_values, allow_duplicates=True)
+                        current_data.insert(len(current_data.columns), "efficiency", efficiency, allow_duplicates=True)
+                        current_data = current_data.set_index("inverter_id")
+
+                        st.dataframe(current_data)
 
     with tab_week:
         def _on_click_week_today():
@@ -213,7 +239,7 @@ if __name__ == "__main__":
             st.session_state.week_input = [
                 week_start_day + delta, week_end_day + delta]
 
-        col1, col2, col3, col4, cols5 = st.columns([0.7, 3.5, 1, 1.6, 3])
+        col1, col2, col3, col4, col5 = st.columns([0.7, 3.5, 1, 1.6, 3])
         date_today = date.today()
         week_start_day = date_today - timedelta(days=date_today.weekday())
         week_end_day = week_start_day + timedelta(days=6)
@@ -258,7 +284,7 @@ if __name__ == "__main__":
             st.session_state.month_input = [
                 month_start_day, month_end_day]
 
-        col1, col2, col3, col4, cols5 = st.columns([0.7, 3.5, 1, 1.6, 3])
+        col1, col2, col3, col4, col5 = st.columns([0.7, 3.5, 1, 1.6, 3])
         date_today = date.today()
         month_start_day = date_today.replace(day=1)
         next_month = date_today.replace(day=28) + timedelta(days=4)
