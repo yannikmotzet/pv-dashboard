@@ -6,6 +6,9 @@ Custom made logging and monitoring of photovoltaic system
 * database: sqlite3
 * dashboard: streamlit
 
+![dashboard day](doc/screenshot_0.png)
+![dashboard month](doc/screenshot_1.png)
+
 ## specs
 ### PV system
 * peak performance: 24.4 kWp
