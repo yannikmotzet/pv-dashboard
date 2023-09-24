@@ -152,7 +152,8 @@ if __name__ == "__main__":
 
     st.set_page_config(
         page_title="PV dashboard",
-        page_icon="☀"
+        page_icon="☀",
+        layout = "wide"
     )
     st.title("PV dashboard")
 
@@ -170,7 +171,7 @@ if __name__ == "__main__":
         def _on_click_right():
             st.session_state.day_input += timedelta(days=1)
 
-        col1, col2, col3, col4, col5 = st.columns([0.7, 2, 1, 1.6, 5])
+        col1, col2, col3, col4, col5 = st.columns([0.7, 5, 0.7, 3, 17])
         date_today = date.today()
         with col1:
             st.button("<", key='day_left', on_click=_on_click_left)
@@ -239,7 +240,7 @@ if __name__ == "__main__":
             st.session_state.week_input = [
                 week_start_day + delta, week_end_day + delta]
 
-        col1, col2, col3, col4, col5 = st.columns([0.7, 3.5, 1, 1.6, 3])
+        col1, col2, col3, col4, col5 = st.columns([0.7, 5, 0.7, 3, 17])
         date_today = date.today()
         week_start_day = date_today - timedelta(days=date_today.weekday())
         week_end_day = week_start_day + timedelta(days=6)
@@ -284,7 +285,7 @@ if __name__ == "__main__":
             st.session_state.month_input = [
                 month_start_day, month_end_day]
 
-        col1, col2, col3, col4, col5 = st.columns([0.7, 3.5, 1, 1.6, 3])
+        col1, col2, col3, col4, col5 = st.columns([0.7, 5, 0.7, 3, 17])
         date_today = date.today()
         month_start_day = date_today.replace(day=1)
         next_month = date_today.replace(day=28) + timedelta(days=4)
