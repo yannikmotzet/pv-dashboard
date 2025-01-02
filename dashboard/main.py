@@ -66,6 +66,7 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
         data_day[f"yield_{id}"] /= 1000
         data_day["power_all"] += data_day[f"power_{id}"]
         data_day["yield_all"] += data_day[f"yield_{id}"]
+    conn.close()
 
     for id, row in data_day.iterrows():
         data_day.at[id, "datetime"] = datetime.fromtimestamp(
@@ -77,6 +78,7 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
 def get_current_data():
     conn = sqlite3.connect(DATABASE_MINUTES)
     data = pd.read_sql(f"SELECT * FROM {TABLE_MINUTES} WHERE TIMESTAMP IS (SELECT MAX(timestamp) from {TABLE_MINUTES} GROUP BY inverter_id) GROUP BY inverter_id", conn)
+    conn.close()
     return data
 
 
@@ -98,6 +100,7 @@ def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
         df = pd.concat([df, pd.DataFrame(data=[[day, total_yield]], columns=[
                        "date", "yield"])], ignore_index=True)
 
+    conn.close()
     return df
 
 
@@ -125,6 +128,7 @@ def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
         month_start_day = month_start_day + timedelta(days=31)
         month_start_day = month_start_day.replace(day=1)
 
+    conn.close()
     return df
 
 def load_yield_per_year(start_year, end_year, timezone="Europe/Zurich"):
@@ -145,6 +149,7 @@ def load_yield_per_year(start_year, end_year, timezone="Europe/Zurich"):
         df = pd.concat([df, pd.DataFrame(data=[[year, total_yield]], columns=[
                        "year", "yield"])], ignore_index=True)
 
+    conn.close()
     return df
 
 
@@ -152,7 +157,8 @@ if __name__ == "__main__":
 
     st.set_page_config(
         page_title="PV dashboard",
-        page_icon="☀"
+        page_icon="☀",
+        layout = "wide"
     )
     st.title("PV dashboard")
 

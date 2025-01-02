@@ -74,8 +74,9 @@ def get_data(addrs):
 
 def write_data(data):
     # save data to database
-    conn = sqlite3.connect(DATABASE_MINUTES)
+    conn = sqlite3.connect(DATABASE_MINUTES, timeout=20)
     data.to_sql(name=TABLE_MINUTES, con=conn, if_exists='append', index=False)
+    conn.close()
 
 
 def minutes_to_days_db():
@@ -88,17 +89,18 @@ def minutes_to_days_db():
     timestamp_end = int(datetime_end.timestamp())
 
     # get max power and yield from DATABASE_MINUTES
-    conn_minutes = sqlite3.connect(DATABASE_MINUTES)
+    conn_minutes = sqlite3.connect(DATABASE_MINUTES, timeout=20)
     data_minutes = pd.read_sql(
         f'SELECT inverter_id, MAX(power_dc) AS power_dc_max, MAX(power_ac) AS power_ac_max FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id', conn_minutes)    
     data_minutes = data_minutes.merge(pd.read_sql(
         f'SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)', conn_minutes))
+    conn_minutes.close()
     timestamp = int(datetime.now().timestamp())
     data_minutes.insert(
         0, "timestamp", [timestamp] * len(data_minutes.index), allow_duplicates=True)
 
     # update data in DATABASE_DAYS
-    conn_days = sqlite3.connect(DATABASE_DAYS)
+    conn_days = sqlite3.connect(DATABASE_DAYS, timeout=20)
     data_days = pd.read_sql(
         f'SELECT * FROM {TABLE_DAYS} WHERE timestamp BETWEEN {timestamp_start} AND {timestamp_end}', conn_days)
     if len(data_days) > 0:
@@ -109,6 +111,7 @@ def minutes_to_days_db():
         conn_days.commit()
     data_minutes.to_sql(name=TABLE_DAYS, con=conn_days,
                         if_exists='append', index=False)
+    conn_days.close()
 
 
 if __name__ == "__main__":
@@ -121,7 +124,10 @@ if __name__ == "__main__":
             data.insert(0, "timestamp", [timestamp]
                         * len(data.index), allow_duplicates=True)
             data["timestamp"] = data["timestamp"].astype(dtype=int)
-            write_data(data)
+            try:
+                write_data(data)
+            except Exception as e:
+                print(e)
             try:
                 minutes_to_days_db()
             except Exception as e:
