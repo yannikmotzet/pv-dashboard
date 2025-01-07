@@ -10,9 +10,7 @@ import streamlit as st
 
 INVERTER_IDs = range(1, 6)
 DATABASE_MINUTES = "database/pv_minutes.db"
-TABLE_MINUTES = "minutes"
 DATABASE_DAYS = "database/pv_days.db"
-TABLE_DAYS = "days"
 TIMEZONE = "Europe/Zurich"
 START_YEAR = 2011
 
@@ -47,6 +45,7 @@ def get_end_datetime_month(date):
 def load_power_curve_day(date, timezone="Europe/Zurich"):
     timestamp_start, timestamp_end = get_start_end_timestamps_day(
         date, timezone)
+    table_minutes = date.strftime('%Y-%m')
 
     data_day = pd.DataFrame(
         columns=["timestamp", "datetime", "power_all", "yield_all"])
@@ -59,7 +58,7 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
     conn = sqlite3.connect(DATABASE_MINUTES)
     for id in INVERTER_IDs:
         data_tmp = pd.read_sql(
-            f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM {TABLE_MINUTES} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
+            f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM "{table_minutes}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
         data_tmp = data_tmp.astype(int)
         data_day = data_day.merge(data_tmp)
         data_day[f"power_{id}"] /= 1000
@@ -75,11 +74,16 @@ def load_power_curve_day(date, timezone="Europe/Zurich"):
     return data_day
 
 
-def get_current_data():
-    conn = sqlite3.connect(DATABASE_MINUTES)
-    data = pd.read_sql(f"SELECT * FROM {TABLE_MINUTES} WHERE TIMESTAMP IS (SELECT MAX(timestamp) from {TABLE_MINUTES} GROUP BY inverter_id) GROUP BY inverter_id", conn)
-    conn.close()
-    return data
+def get_current_data(date_today):
+    table_minutes = date_today.strftime('%Y-%m')
+    try:
+        conn = sqlite3.connect(DATABASE_MINUTES)
+        data = pd.read_sql(f'SELECT * FROM "{table_minutes}" WHERE TIMESTAMP IS (SELECT MAX(timestamp) from "{table_minutes}" GROUP BY inverter_id) GROUP BY inverter_id', conn)
+        conn.close()
+        return data
+    except Exception as e:
+        st.exception(e)
+    return None
 
 
 def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
@@ -90,11 +94,15 @@ def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
 
     conn = sqlite3.connect(DATABASE_DAYS)
     for day in dates_list:
+        table_days = day.strftime('%Y')
         timestamp_start, timestamp_end = get_start_end_timestamps_day(
             day, timezone)
 
-        data = pd.read_sql(
-            f"SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)", conn)
+        try:
+            data = pd.read_sql(
+                f'SELECT inverter_id, yield_day FROM (SELECT MAX(timestamp), inverter_id, yield_day FROM "{table_days}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id)', conn)
+        except:
+            continue
         total_yield = data["yield_day"].sum() / 1000
 
         df = pd.concat([df, pd.DataFrame(data=[[day, total_yield]], columns=[
@@ -105,10 +113,10 @@ def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
 
 
 def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
+    table_days = start_date.strftime('%Y')
     number_of_months = (end_date.year - start_date.year) * \
         12 + end_date.month - start_date.month
     month_start_day = datetime.combine(start_date, datetime.min.time())
-
     df = pd.DataFrame(columns=["month", "yield"])
 
     conn = sqlite3.connect(DATABASE_DAYS)
@@ -118,8 +126,12 @@ def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
             month_start_day, timezone)
         timestamp_end = get_timestamp_from_datetime(month_end_day, timezone)
 
-        data = pd.read_sql(
-            f"SELECT inverter_id, SUM(yield_day) as yield FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id", conn)
+        try:
+            data = pd.read_sql(
+                f'SELECT inverter_id, SUM(yield_day) as yield FROM "{table_days}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id', conn)
+        except:
+            continue
+    
         total_yield = data["yield"].sum() / 1000
 
         df = pd.concat([df, pd.DataFrame(data=[[month_start_day.month, total_yield]], columns=[
@@ -135,6 +147,7 @@ def load_yield_per_year(start_year, end_year, timezone="Europe/Zurich"):
     df = pd.DataFrame(columns=["year", "yield"])
     conn = sqlite3.connect(DATABASE_DAYS)
     for year in range(start_year, end_year + 1):
+        table_days = str(year)
         start_datetime = datetime(year=year, month=1, day=1)
         end_datetime = datetime(year=year+1, month=1, day=1)
         timestamp_start = get_timestamp_from_datetime(
@@ -142,8 +155,11 @@ def load_yield_per_year(start_year, end_year, timezone="Europe/Zurich"):
         timestamp_end = get_timestamp_from_datetime(
             end_datetime, timezone)
         
-        data = pd.read_sql(
-            f"SELECT inverter_id, SUM(yield_day) as yield FROM {TABLE_DAYS} WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id", conn)
+        try:
+            data = pd.read_sql(
+                f'SELECT inverter_id, SUM(yield_day) as yield FROM "{table_days}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) GROUP BY inverter_id', conn)
+        except:
+            continue
         total_yield = data["yield"].sum() / 1000
 
         df = pd.concat([df, pd.DataFrame(data=[[year, total_yield]], columns=[
@@ -164,6 +180,9 @@ if __name__ == "__main__":
 
     tab_day, tab_week, tab_month, tab_year, tab_all = st.tabs(
         ["day", "week", "month", "year", "all"])
+    # tab_day, tab_month, tab_year, tab_all = st.tabs(
+    # ["day", "month", "year", "all"])
+
 
     with tab_day:
         # https://discuss.streamlit.io/t/how-to-work-date-input-with-shortcuts/25377/2
@@ -178,6 +197,7 @@ if __name__ == "__main__":
 
         col1, col2, col3, col4, col5 = st.columns([0.7, 2, 1, 1.6, 5])
         date_today = date.today()
+
         with col1:
             st.button("<", key='day_left', on_click=_on_click_left)
         with col2:
@@ -200,15 +220,18 @@ if __name__ == "__main__":
                     st.metric(label="yield",
                             value=f'{data.iloc[-1]["yield_all"]:.2f} kWh')
                 with mcol2:
+                    # if current day is selected: show power
                     if datetime_day_slected == date_today:
                         st.metric(label="power",
                                 value=f'{data.iloc[-1]["power_all"]:.3f} kW')
                 st.line_chart(data, x="datetime", y=[
                               "power_all", "power_1", "power_2", "power_3", "power_4", "power_5"])
-                if datetime_day_slected == date_today:                    
-                    current_data = get_current_data()
-                    if len(current_data) > 0:
-                        
+                
+                # if current day is selected: show table with data for each inverter
+                if datetime_day_slected == date_today:         
+                    current_data = get_current_data(date_today)
+
+                    if current_data is not None and len(current_data) > 0:
                         time_values, efficiency = [], []
                         for i, row in current_data.iterrows():
                             time_values.append(datetime.fromtimestamp(row["timestamp"], tz=pytz.utc).astimezone(pytz.timezone(TIMEZONE)).replace(tzinfo=None).strftime("%H:%M:%S"))
