@@ -3,8 +3,9 @@
 Custom made logging and monitoring of photovoltaic system
 
 * logging via RS485
-* database: sqlite3
-* dashboard: streamlit
+* database: Sqlite3
+* dashboard: Streamlit
+* bot: Telegram
 
 ## specs
 ### PV system
@@ -14,8 +15,11 @@ Custom made logging and monitoring of photovoltaic system
 * commissioning date: 2011
 
 ### hardware
-* Banana Pi BPI-M1 with armbian
-* RS485 to USB converter: YYH-256 (MAX485, CH340)
+* Banana Pi M1 with armbian 24.11
+* RS485 to USB converter: CH340/MAX485 (YYH-256)
+
+## getting started
+* run installation script to install dependencies and services: ```./install.sh```
 
 ## knowledge pool
 * [TechCrawler - dd-wrt Logger per RS-485 an Kaco Wechselrichter](https://web.archive.org/web/20180423200510/http://techcrawler.riedme.de/2011/09/25/dd-wrt-logger-per-rs-485-an-kaco-wechselrichter/)
