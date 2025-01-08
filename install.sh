@@ -3,6 +3,7 @@
 # Set the minor version of Python3
 PYTHON_MINOR_VERSION=9
 VIRTUALENV_NAME=env-3.${PYTHON_MINOR_VERSION}
+USER=pi
 
 # Check if the specified Python version is installed
 if ! python3.${PYTHON_MINOR_VERSION} --version &>/dev/null; then
@@ -48,8 +49,10 @@ python3.${PYTHON_MINOR_VERSION} -m pip install -r requirements.txt
 # Hint: in case using armv7l (arm 32-bit) there is no pyarrow binary available which is required for streamlit
 # In this case, you need to build pyarrow by yourself
 
-# configure systemctrl services
+# sudo apt install libtiff5-dev # required for PIL/matplotlib
+sudo apt install libnss3-dev # required for Plotly
 
+# configure systemctrl services
 # pv-logger.service
 read -p "Do you want to create and configure the pv-logger.service? (y/n): " choice
 if [[ "$choice" == [Yy]* ]]; then
@@ -59,9 +62,9 @@ if [[ "$choice" == [Yy]* ]]; then
 Description=PV logger daemon
 
 [Service]
-WorkingDirectory=/home/pi/pv-dashboard/
-User=pi
-ExecStart=/home/pi/pv-dashboard/env-3.${PYTHON_MINOR_VERSION}/bin/python3 logger/logger.py
+WorkingDirectory=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/
+User=${PYTHON_MINOR_VERSION}
+ExecStart=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/env-3.${PYTHON_MINOR_VERSION}/bin/python3 logger/logger.py
 Type=simple
 
 [Install]
@@ -89,9 +92,10 @@ if [[ "$choice" == [Yy]* ]]; then
 Description=PV bot daemon
 
 [Service]
-WorkingDirectory=/home/pi/pv-dashboard/
-User=pi
-ExecStart=/home/pi/pv-dashboard/env-3.${PYTHON_MINOR_VERSION}/bin/python3 bot/bot.py
+WorkingDirectory=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/
+User=${PYTHON_MINOR_VERSION}
+Environment=PYTHONPATH=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/
+ExecStart=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/env-3.${PYTHON_MINOR_VERSION}/bin/python3 bot/bot.py
 Type=simple
 
 [Install]
@@ -119,9 +123,10 @@ if [[ "$choice" == [Yy]* ]]; then
 Description=PV dashboard daemon
 
 [Service]
-WorkingDirectory=/home/pi/pv-dashboard/
-User=pi
-ExecStart=/home/pi/pv-dashboard/env-3.${PYTHON_MINOR_VERSION}/bin/python3 dashboard/dashboard.py
+WorkingDirectory=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/
+User=${PYTHON_MINOR_VERSION}
+Environment=PYTHONPATH=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/
+ExecStart=/home/${PYTHON_MINOR_VERSION}/pv-dashboard/env-3.${PYTHON_MINOR_VERSION}/bin/python3 dashboard/dashboard.py
 Type=simple
 
 [Install]
