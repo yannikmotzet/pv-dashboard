@@ -2,13 +2,13 @@ import time
 from datetime import datetime, timedelta, date
 import pytz
 import calendar
-
 import numpy as np
 import pandas as pd
 import sqlite3
 import streamlit as st
+import utils.db_utils as db_utils
 
-INVERTER_IDs = range(1, 6)
+INVERTER_IDS = range(1, 6)
 DATABASE_MINUTES = "database/pv_minutes.db"
 DATABASE_DAYS = "database/pv_days.db"
 TIMEZONE = "Europe/Zurich"
@@ -19,71 +19,11 @@ START_YEAR = 2011
 # TODO yield_per_day/month(): check sql request, maybe merge code
 
 
-def get_timestamp_from_datetime(date_time, timezone="Europe/Zurich"):
-    if date_time.tzinfo is None:
-        date_time = pytz.timezone(timezone).localize(
-            date_time).astimezone(pytz.utc)
-    timestamp = int(date_time.timestamp())
-    return timestamp
-
-
-def get_start_end_timestamps_day(day_date, timezone="Europe/Zurich"):
-    datetime_start = datetime.combine(day_date, datetime.min.time())
-    timestamp_start = get_timestamp_from_datetime(datetime_start, timezone)
-    timestamp_end = get_timestamp_from_datetime(
-        datetime_start + timedelta(days=1), timezone)
-    return timestamp_start, timestamp_end
-
-
 def get_end_datetime_month(date):
     next_month = date.replace(day=28) + timedelta(days=4)
     month_end_date = next_month - timedelta(days=next_month.day)
     month_end_datetime = datetime.combine(month_end_date, datetime.max.time())
     return month_end_datetime
-
-
-def load_power_curve_day(date, timezone="Europe/Zurich"):
-    timestamp_start, timestamp_end = get_start_end_timestamps_day(
-        date, timezone)
-    table_minutes = date.strftime('%Y-%m')
-
-    data_day = pd.DataFrame(
-        columns=["timestamp", "datetime", "power_all", "yield_all"])
-    data_day["timestamp"] = np.arange(timestamp_start, timestamp_end)
-    data_day["power_all"] = np.zeros(
-        timestamp_end - timestamp_start, dtype=int)
-    data_day["yield_all"] = np.zeros(
-        timestamp_end - timestamp_start, dtype=int)
-
-    conn = sqlite3.connect(DATABASE_MINUTES)
-    for id in INVERTER_IDs:
-        data_tmp = pd.read_sql(
-            f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM "{table_minutes}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
-        data_tmp = data_tmp.astype(int)
-        data_day = data_day.merge(data_tmp)
-        data_day[f"power_{id}"] /= 1000
-        data_day[f"yield_{id}"] /= 1000
-        data_day["power_all"] += data_day[f"power_{id}"]
-        data_day["yield_all"] += data_day[f"yield_{id}"]
-    conn.close()
-
-    for id, row in data_day.iterrows():
-        data_day.at[id, "datetime"] = datetime.fromtimestamp(
-            row["timestamp"], tz=pytz.utc).astimezone(pytz.timezone(timezone)).replace(tzinfo=None)
-
-    return data_day
-
-
-def get_current_data(date_today):
-    table_minutes = date_today.strftime('%Y-%m')
-    try:
-        conn = sqlite3.connect(DATABASE_MINUTES)
-        data = pd.read_sql(f'SELECT * FROM "{table_minutes}" WHERE TIMESTAMP IS (SELECT MAX(timestamp) from "{table_minutes}" GROUP BY inverter_id) GROUP BY inverter_id', conn)
-        conn.close()
-        return data
-    except Exception as e:
-        st.exception(e)
-    return None
 
 
 def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
@@ -95,7 +35,7 @@ def load_yield_per_days(start_day, end_day, timezone="Europe/Zurich"):
     conn = sqlite3.connect(DATABASE_DAYS)
     for day in dates_list:
         table_days = day.strftime('%Y')
-        timestamp_start, timestamp_end = get_start_end_timestamps_day(
+        timestamp_start, timestamp_end = db_utils.get_start_end_timestamps_day(
             day, timezone)
 
         try:
@@ -122,9 +62,9 @@ def load_yield_per_month(start_date, end_date, timezone="Europe/Zurich"):
     conn = sqlite3.connect(DATABASE_DAYS)
     for i in range(number_of_months + 1):
         month_end_day = get_end_datetime_month(month_start_day)
-        timestamp_start = get_timestamp_from_datetime(
+        timestamp_start = db_utils.get_timestamp_from_datetime(
             month_start_day, timezone)
-        timestamp_end = get_timestamp_from_datetime(month_end_day, timezone)
+        timestamp_end = db_utils.get_timestamp_from_datetime(month_end_day, timezone)
 
         try:
             data = pd.read_sql(
@@ -150,9 +90,9 @@ def load_yield_per_year(start_year, end_year, timezone="Europe/Zurich"):
         table_days = str(year)
         start_datetime = datetime(year=year, month=1, day=1)
         end_datetime = datetime(year=year+1, month=1, day=1)
-        timestamp_start = get_timestamp_from_datetime(
+        timestamp_start = db_utils.get_timestamp_from_datetime(
             start_datetime, timezone)
-        timestamp_end = get_timestamp_from_datetime(
+        timestamp_end = db_utils.get_timestamp_from_datetime(
             end_datetime, timezone)
         
         try:
@@ -201,17 +141,17 @@ if __name__ == "__main__":
         with col1:
             st.button("<", key='day_left', on_click=_on_click_left)
         with col2:
-            datetime_day_slected = st.date_input(
+            datetime_day_selected = st.date_input(
                 "day input", key="day_input", label_visibility="collapsed")
         with col3:
             st.button("\>", key='day_right', on_click=_on_click_right)
         with col4:
             st.button("today", key='day_today', on_click=_on_click_today)
 
-        if datetime_day_slected > date_today:
+        if datetime_day_selected > date_today:
             st.warning('Selected day is in the future!', icon="⚠️")
         else:
-            data = load_power_curve_day(datetime_day_slected)
+            data = db_utils.load_power_curve_day(datetime_day_selected, DATABASE_MINUTES, INVERTER_IDs)
             if len(data) == 0:
                 st.error("no data found", icon="⚠️")
             else:
@@ -221,15 +161,20 @@ if __name__ == "__main__":
                             value=f'{data.iloc[-1]["yield_all"]:.2f} kWh')
                 with mcol2:
                     # if current day is selected: show power
-                    if datetime_day_slected == date_today:
+                    if datetime_day_selected == date_today:
                         st.metric(label="power",
                                 value=f'{data.iloc[-1]["power_all"]:.3f} kW')
                 st.line_chart(data, x="datetime", y=[
                               "power_all", "power_1", "power_2", "power_3", "power_4", "power_5"])
                 
                 # if current day is selected: show table with data for each inverter
-                if datetime_day_slected == date_today:         
-                    current_data = get_current_data(date_today)
+                if datetime_day_selected == date_today:         
+                    try:
+                        current_data = None
+                        table_minutes = date_today.strftime('%Y-%m')
+                        current_data = db_utils.get_latest_pv_data(DATABASE_MINUTES, table_minutes)
+                    except Exception as e:
+                        st.exception(e)
 
                     if current_data is not None and len(current_data) > 0:
                         time_values, efficiency = [], []
@@ -276,7 +221,7 @@ if __name__ == "__main__":
             st.button("<", key='week_left', on_click=_on_click_week_left)
         # https://github.com/streamlit/streamlit/issues/6167
         with col2:
-            datetime_day_slected = st.date_input("week input", [
+            datetime_day_selected = st.date_input("week input", [
                                                  week_start_day, week_end_day], key="week_input", label_visibility="collapsed")
         with col3:
             st.button("\>", key='week_right', on_click=_on_click_week_right)
@@ -321,7 +266,7 @@ if __name__ == "__main__":
         with col1:
             st.button("<", key='month_left', on_click=_on_click_month_left)
         with col2:
-            datetime_day_slected = st.date_input("month input", [
+            datetime_day_selected = st.date_input("month input", [
                 month_start_day, month_end_day], key="month_input", label_visibility="collapsed")
         with col3:
             st.button("\>", key='month_right', on_click=_on_click_month_right)
