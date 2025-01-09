@@ -6,16 +6,19 @@ from datetime import datetime, timedelta
 import time
 import pytz
 import logging
+import copy
+import utils.db_utils as db_utils
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-INVERTER_IDs = range(1, 6)
+INVERTER_IDS = range(1, 6)
 DATABASE_USERS = "database/users.db"
 DATABASE_MINUTES = "database/pv_minutes.db"
 DATABASE_DAYS = "database/pv_days.db"
+TIMEZONE = "Europe/Zurich"
 
 def update_user(chat_id, subscribed=False):
     conn = sqlite3.connect(DATABASE_USERS)
@@ -35,7 +38,7 @@ def check_user(chat_id):
     conn.close()
     return user
 
-def update_last_message(chat_id):
+def update_db_last_message(chat_id):
     conn = sqlite3.connect(DATABASE_USERS)
     cursor = conn.cursor()
     current_time = int(datetime.now().timestamp())
@@ -55,34 +58,42 @@ def get_subscribed_users():
     cursor.execute('''SELECT chat_id FROM users WHERE subscribed = 1''')
     users = cursor.fetchall()
     conn.close()
+    users = [user[0] for user in users]
     return users
 
 
-def get_latest_pv_data():
-    timestamp_now = int(datetime.now().timestamp())
-    table_minutes = datetime.fromtimestamp(timestamp_now, tz=pytz.timezone("Europe/Zurich")).strftime('%Y-%m')
-    conn_minutes = sqlite3.connect(DATABASE_MINUTES)
-    data = pd.read_sql(
-        f'SELECT * FROM "{table_minutes}" WHERE TIMESTAMP = (SELECT MAX(timestamp) FROM "{table_minutes}" GROUP BY inverter_id) GROUP BY inverter_id', conn_minutes)
-    conn_minutes.close()
-    return data
-
-def pv_data_to_message(data):
-    yield_value = data["yield_day"].sum() / 1000
-    power_value = data["power_ac"].sum() / 1000
-    timestamp_now = data["timestamp"][0]
-
-    timestamp_str = datetime.fromtimestamp(timestamp_now).strftime('%d.%m.%y %H:%M')
-    message = f"yield: *{yield_value:.2f}* kWh\npower: *{power_value:.2f}* kW\n_{timestamp_str}_"
+def pv_data_to_message(data, add_yield=True, add_power=True, add_time=True, markdown=True):
+    message_parts = []
+    
+    if add_yield:
+        yield_value = data["yield_day"].sum() / 1000
+        message_parts.append(f"yield: *{yield_value:.2f}* kWh")
+    
+    if add_power and "power_ac" in data.columns:
+        power_value = data["power_ac"].sum() / 1000
+        message_parts.append(f"power: *{power_value:.2f}* kW")
+    
+    if add_time:
+        timestamp_str = datetime.fromtimestamp(data["timestamp"].iloc[-1]).strftime('%d.%m.%y %H:%M')
+        message_parts.append(f"_{timestamp_str}_")
+    
+    message = "\n".join(message_parts)
+    
+    if not markdown:
+        message = message.replace("*", "").replace("_", "")
+    
     return message
 
 
 async def post_init(application: Application) -> None:
     # https://docs.python-telegram-bot.org/en/stable/telegram.ext.applicationbuilder.html#telegram.ext.ApplicationBuilder.post_init
     commands = [
-        ("start", "Start daily notifications."),
-        ("stop", "Stop daily notifications."),
-        ("status", "Get current PV system status")
+        ("start", "Start daily notifications"),
+        ("stop", "Stop daily notifications"),
+        ("status", "Get current PV system status"),
+        ("day", "Get power curve of the current day"),
+        ("month", "Get column chart of yield in current month")
+
     ]
     await application.bot.set_my_commands(commands)
 
@@ -91,7 +102,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_user(update.effective_chat.id, subscribed=True)
         await context.bot.send_message(chat_id=update.effective_chat.id, text="You have successfully subscribed for daily notifications. To unsubscribe use /stop.")
     except Exception as e:
-        print(e)
+        logging.error(e)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Something went wrong.")
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,48 +110,103 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_user(update.effective_chat.id, subscribed=False)
         await context.bot.send_message(chat_id=update.effective_chat.id, text="You have successfully unsubscribed from daily notifications.")
     except Exception as e:
-        print(e)
+        logging.error(e)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Something went wrong.")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        update_last_message(update.effective_chat.id)
+        update_db_last_message(update.effective_chat.id)
     except Exception as e:
-        print(e)
+        logging.error(e)
 
     try:
-        data = get_latest_pv_data()
+        datetime_now = datetime.now(pytz.timezone(TIMEZONE))
+        table_minutes = datetime_now.strftime('%Y-%m')
+        latest_data = db_utils.get_latest_pv_data(DATABASE_MINUTES, table_minutes)
+        message = pv_data_to_message(latest_data)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='Markdown')
     except Exception as e:
-        print(e)
+        logging.error(e)
         exception_message = str(e)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=exception_message)
         return
-    
-    message = pv_data_to_message(data)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=message, parse_mode='Markdown')
 
-async def notification_status(context: ContextTypes.DEFAULT_TYPE):
+async def day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        subscribed_users = get_subscribed_users()
+        update_db_last_message(update.effective_chat.id)
     except Exception as e:
-        print(e)
+        logging.error(e)
+    
+    try:
+        datetime_now = datetime.now(pytz.timezone(TIMEZONE))
+        table_minutes = datetime_now.strftime('%Y-%m')
+        latest_data = db_utils.get_latest_pv_data(DATABASE_MINUTES, table_minutes)
+        message = pv_data_to_message(latest_data)
+        timestamp_latest = latest_data["timestamp"].iloc[-1]
+        datetime_latest_data = datetime.fromtimestamp(timestamp_latest, tz=pytz.timezone(TIMEZONE))
+        
+        power_curve = db_utils.load_power_curve_day(datetime_latest_data, DATABASE_MINUTES, INVERTER_IDS)
+        if power_curve.empty:
+            logging.info("no data found for power curve")
+            return
+        plot_object = db_utils.power_curve_to_plot(power_curve, inverter_ids=INVERTER_IDS)
+
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=copy.copy(plot_object), caption=message, parse_mode='Markdown')
+    except Exception as e:
+        logging.error(e)
         return
     
+async def month(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        update_db_last_message(update.effective_chat.id)
+    except Exception as e:
+        logging.error(e)
+
+    message = "This feature is not yet implemented."
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+
+async def subscription_job(context: ContextTypes.DEFAULT_TYPE):
     # send subscription message when sun is set (last entry in PV database is older than certain threshold)
     min_time_diff = 15 * 60 # sec
     max_time_diff = 30 * 60 + min_time_diff # sec
-    data = get_latest_pv_data()
-    timestamp_data = data["timestamp"][0]
-    timestamp_now = int(datetime.now().timestamp())
-    time_difference = timestamp_now - timestamp_data
+
+    datetime_now = datetime.now(pytz.timezone(TIMEZONE))
+    table_minutes = datetime_now.strftime('%Y-%m')
+    latest_data = db_utils.get_latest_pv_data(DATABASE_MINUTES, table_minutes)
+    timestamp_latest = latest_data["timestamp"].iloc[-1]
+    timestamp_now = int(datetime_now.timestamp())
+    time_difference = timestamp_now - timestamp_latest
 
     # check if the time difference is within the notification window
-    if time_difference > min_time_diff and time_difference <= max_time_diff:
-        for user in subscribed_users:
-            chat_id = user[0]
-            message = "*Daily notification*\n"
-            message += pv_data_to_message(data)
-            message += "\n\nUse /stop to turn off daily notifications."
+    if not(time_difference > min_time_diff and time_difference <= max_time_diff):
+        return
+    
+    try:
+        subscribed_users = get_subscribed_users()
+    except Exception as e:
+        logging.error(e)
+        return
+
+    # generate plot
+    plot_object = None
+    try:
+        datetime_now = datetime.now(pytz.timezone(TIMEZONE))
+        power_curve = db_utils.load_power_curve_day(datetime_now, DATABASE_MINUTES, INVERTER_IDS)
+        if not power_curve.empty:
+            plot_object = db_utils.power_curve_to_plot(power_curve, inverter_ids=INVERTER_IDS)
+        else:
+            logging.info("no data found for power curve")
+    except Exception as e:
+        logging.error(e)
+
+    message = f"*Daily notification*\n{pv_data_to_message(latest_data, add_power=False)}\n\nUse /stop to turn off daily notifications."
+
+    if plot_object is not None:
+        for chat_id in subscribed_users:
+            # use copy, send_photo() clears photo object
+            await context.bot.send_photo(chat_id=chat_id, photo=copy.copy(plot_object), caption=message, parse_mode='Markdown')
+    else:
+        for chat_id in subscribed_users:
             await context.bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
 
 
@@ -154,18 +220,21 @@ if __name__ == '__main__':
         start_handler = CommandHandler('start', start)
         stop_handler = CommandHandler('stop', stop)
         status_handler = CommandHandler('status', status)
+        day_handler = CommandHandler('day', day)
+        month_handler = CommandHandler('month', month)
         application.add_handler(start_handler)
         application.add_handler(stop_handler)
         application.add_handler(status_handler)
+        application.add_handler(day_handler)
+        application.add_handler(month_handler)
 
         # check every hour for sending status
         job_queue = application.job_queue
         now = datetime.now()
         first_run = datetime(now.year, now.month, now.day, now.hour, now.minute // 30 * 30) + timedelta(minutes=30, seconds=30)
-        job_queue.run_repeating(notification_status, interval=timedelta(minutes=30), first=first_run)
-        # job_queue.run_repeating(notification_status, interval=timedelta(hours=1), first=timedelta(seconds=10))
+        job_queue.run_repeating(subscription_job, interval=timedelta(minutes=30), first=first_run)
 
         application.run_polling()
     except Exception as e:
-        print(e)
+        logging.error(e)
         time.sleep(20)
