@@ -167,7 +167,7 @@ async def month(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def subscription_job(context: ContextTypes.DEFAULT_TYPE):
     # send subscription message when sun is set (last entry in PV database is older than certain threshold)
-    min_time_diff = 15 * 60 # sec
+    min_time_diff = 10 * 60 # sec
     max_time_diff = 30 * 60 + min_time_diff # sec
 
     datetime_now = datetime.now(pytz.timezone(TIMEZONE))
@@ -211,30 +211,32 @@ async def subscription_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
+    
     with open('bot/telegram.token', 'r') as file:
         chat_token = file.read().strip()
 
-    try:
-        application = Application.builder().token(chat_token).post_init(post_init).build()
+    while True:
+        try:
+            application = Application.builder().token(chat_token).post_init(post_init).build()
 
-        start_handler = CommandHandler('start', start)
-        stop_handler = CommandHandler('stop', stop)
-        status_handler = CommandHandler('status', status)
-        day_handler = CommandHandler('day', day)
-        month_handler = CommandHandler('month', month)
-        application.add_handler(start_handler)
-        application.add_handler(stop_handler)
-        application.add_handler(status_handler)
-        application.add_handler(day_handler)
-        application.add_handler(month_handler)
+            start_handler = CommandHandler('start', start)
+            stop_handler = CommandHandler('stop', stop)
+            status_handler = CommandHandler('status', status)
+            day_handler = CommandHandler('day', day)
+            month_handler = CommandHandler('month', month)
+            application.add_handler(start_handler)
+            application.add_handler(stop_handler)
+            application.add_handler(status_handler)
+            application.add_handler(day_handler)
+            application.add_handler(month_handler)
 
-        # check every hour for sending status
-        job_queue = application.job_queue
-        now = datetime.now()
-        first_run = datetime(now.year, now.month, now.day, now.hour, now.minute // 30 * 30) + timedelta(minutes=30, seconds=30)
-        job_queue.run_repeating(subscription_job, interval=timedelta(minutes=30), first=first_run)
+            # check every hour for sending status
+            job_queue = application.job_queue
+            now = datetime.now()
+            first_run = datetime(now.year, now.month, now.day, now.hour, now.minute // 30 * 30) + timedelta(minutes=30, seconds=30)
+            job_queue.run_repeating(subscription_job, interval=timedelta(minutes=30), first=first_run)
 
-        application.run_polling()
-    except Exception as e:
-        logging.error(e)
-        time.sleep(20)
+            application.run_polling()
+        except Exception as e:
+            logging.error(e)
+            time.sleep(20)

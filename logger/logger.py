@@ -8,7 +8,7 @@ import sqlite3
 # import hydra
 # from omegaconf import DictConfig, OmegaConf
 
-INVERTER_IDs = range(1, 6)
+INVERTER_IDS = range(1, 6)
 DATA_COLUMNS = {"inverter_id": int, "status": int, "voltage_dc": float, "current_dc": float, "power_dc": int,
                 "voltage_ac": float, "current_ac": float, "power_ac": int, "temperature": int, "yield_day": int}
 DATABASE_MINUTES = "database/pv_minutes.db"
@@ -80,7 +80,7 @@ def get_inverter_data(addrs):
 def write_to_db(data, database_name, table_name, timeout=20):
     try:
         conn = sqlite3.connect(database_name, timeout=timeout)
-        data.to_sql(name=table_name, con=conn, if_exists='append', index=False)
+        data.to_sql(name=table_name, con=conn, if_exists='append', index=False, dtype=DATA_COLUMNS)
         conn.close()
     except Exception as e:
         print(e)
@@ -157,7 +157,7 @@ def get_day_start_end(timestamp, tz=pytz.timezone("Europe/Zurich")):
 if __name__ == "__main__":
     # periodically retrieve data and save to database
     while True:
-        data_now = get_inverter_data(INVERTER_IDs)
+        data_now = get_inverter_data(INVERTER_IDS)
 
         if data_now is not None:
             # insert timestamp column
