@@ -9,8 +9,8 @@ import sqlite3
 # from omegaconf import DictConfig, OmegaConf
 
 INVERTER_IDS = range(1, 6)
-DATA_COLUMNS = {"inverter_id": int, "status": int, "voltage_dc": float, "current_dc": float, "power_dc": int,
-                "voltage_ac": float, "current_ac": float, "power_ac": int, "temperature": int, "yield_day": int}
+DATA_COLUMNS = {"inverter_id": "int", "status": "int", "voltage_dc": "float", "current_dc": "float", "power_dc": "int",
+                "voltage_ac": "float", "current_ac": "float", "power_ac": "int", "temperature": "int", "yield_day": "int"}
 DATABASE_MINUTES = "database/pv_minutes.db"
 DATABASE_DAYS = "database/pv_days.db"
 
