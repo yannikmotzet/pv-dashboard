@@ -21,43 +21,38 @@ DATABASE_DAYS = "database/pv_days.db"
 TIMEZONE = "Europe/Zurich"
 
 def update_user(chat_id, subscribed=False):
-    conn = sqlite3.connect(DATABASE_USERS)
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users (chat_id INTEGER PRIMARY KEY, subscribed INTEGER, joined_at INTEGER, last_update INTEGER, last_message INTEGER)''')
-    current_time = int(datetime.now().timestamp())
-    cursor.execute('''INSERT OR REPLACE INTO users (chat_id, subscribed, joined_at, last_update, last_message) VALUES (?, ?, COALESCE((SELECT joined_at FROM users WHERE chat_id = ?), ?), ?, ?)''', 
-                    (chat_id, int(subscribed), chat_id, current_time, current_time, current_time))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DATABASE_USERS) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS users (chat_id INTEGER PRIMARY KEY, subscribed INTEGER, joined_at INTEGER, last_update INTEGER, last_message INTEGER)''')
+        current_time = int(datetime.now().timestamp())
+        cursor.execute('''INSERT OR REPLACE INTO users (chat_id, subscribed, joined_at, last_update, last_message) VALUES (?, ?, COALESCE((SELECT joined_at FROM users WHERE chat_id = ?), ?), ?, ?)''', 
+                        (chat_id, int(subscribed), chat_id, current_time, current_time, current_time))
+        conn.commit()
 
 def check_user(chat_id):
-    conn = sqlite3.connect(DATABASE_USERS)
-    cursor = conn.cursor()
-    cursor.execute('''SELECT chat_id FROM users WHERE chat_id = ?''', (chat_id,))
-    user = cursor.fetchone()
-    conn.close()
+    with sqlite3.connect(DATABASE_USERS) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''SELECT chat_id FROM users WHERE chat_id = ?''', (chat_id,))
+        user = cursor.fetchone()
     return user
 
 def update_db_last_message(chat_id):
-    conn = sqlite3.connect(DATABASE_USERS)
-    cursor = conn.cursor()
-    current_time = int(datetime.now().timestamp())
-    cursor.execute('''SELECT name FROM sqlite_master WHERE type='table' AND name='users' ''')
-    # in case table or user does not exist
-    if cursor.fetchone() is None or cursor.rowcount == 0:
-        conn.close()
-        update_user(chat_id)
-        return
-    cursor.execute('''UPDATE users SET last_message = ? WHERE chat_id = ?''', (current_time, chat_id))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DATABASE_USERS) as conn:
+        cursor = conn.cursor()
+        current_time = int(datetime.now().timestamp())
+        cursor.execute('''SELECT name FROM sqlite_master WHERE type='table' AND name='users' ''')
+        # in case table or user does not exist
+        if cursor.fetchone() is None or cursor.rowcount == 0:
+            update_user(chat_id)
+            return
+        cursor.execute('''UPDATE users SET last_message = ? WHERE chat_id = ?''', (current_time, chat_id))
+        conn.commit()
 
 def get_subscribed_users():
-    conn = sqlite3.connect(DATABASE_USERS)
-    cursor = conn.cursor()
-    cursor.execute('''SELECT chat_id FROM users WHERE subscribed = 1''')
-    users = cursor.fetchall()
-    conn.close()
+    with sqlite3.connect(DATABASE_USERS) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''SELECT chat_id FROM users WHERE subscribed = 1''')
+        users = cursor.fetchall()
     users = [user[0] for user in users]
     return users
 
@@ -152,6 +147,7 @@ async def day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plot_object = db_utils.power_curve_to_plot(power_curve, inverter_ids=INVERTER_IDS)
 
         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=copy.copy(plot_object), caption=message, parse_mode='Markdown')
+        del plot_object
     except Exception as e:
         logging.error(e)
         return
@@ -205,6 +201,7 @@ async def subscription_job(context: ContextTypes.DEFAULT_TYPE):
         for chat_id in subscribed_users:
             # use copy, send_photo() clears photo object
             await context.bot.send_photo(chat_id=chat_id, photo=copy.copy(plot_object), caption=message, parse_mode='Markdown')
+        del plot_object
     else:
         for chat_id in subscribed_users:
             await context.bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')

@@ -31,9 +31,8 @@ def get_latest_pv_data(database, table):
         pandas.DataFrame: A DataFrame containing the latest PV data for each inverter_id.
                           The DataFrame includes a column 'max_timestamp' representing the latest timestamp.
     """
-    conn = sqlite3.connect(database)
-    data = pd.read_sql(f'SELECT MAX(TIMESTAMP) as max_timestamp, * FROM "{table}" GROUP BY inverter_id', conn)
-    conn.close()
+    with sqlite3.connect(database) as conn:
+        data = pd.read_sql(f'SELECT MAX(TIMESTAMP) as max_timestamp, * FROM "{table}" GROUP BY inverter_id', conn)
     return data
 
 
@@ -50,17 +49,16 @@ def load_power_curve_day(date, database, inverter_ids, timezone="Europe/Zurich")
     data_day["yield_all"] = np.zeros(
         timestamp_end - timestamp_start, dtype=int)
 
-    conn = sqlite3.connect(database)
-    for id in inverter_ids:
-        data_tmp = pd.read_sql(
-            f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM "{table_minutes}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
-        data_tmp = data_tmp.astype(int)
-        data_day = data_day.merge(data_tmp)
-        data_day[f"power_{id}"] /= 1000
-        data_day[f"yield_{id}"] /= 1000
-        data_day["power_all"] += data_day[f"power_{id}"]
-        data_day["yield_all"] += data_day[f"yield_{id}"]
-    conn.close()
+    with sqlite3.connect(database) as conn:
+        for id in inverter_ids:
+            data_tmp = pd.read_sql(
+                f'SELECT timestamp, power_ac as power_{id}, yield_day as yield_{id} FROM "{table_minutes}" WHERE (timestamp BETWEEN {timestamp_start} AND {timestamp_end}) AND inverter_id = {id}', conn)
+            data_tmp = data_tmp.astype(int)
+            data_day = data_day.merge(data_tmp)
+            data_day[f"power_{id}"] /= 1000
+            data_day[f"yield_{id}"] /= 1000
+            data_day["power_all"] += data_day[f"power_{id}"]
+            data_day["yield_all"] += data_day[f"yield_{id}"]
 
     data_day["datetime"] = pd.to_datetime(data_day["timestamp"], unit='s', utc=True).dt.tz_convert(timezone).dt.tz_localize(None)
 
@@ -104,5 +102,6 @@ def power_curve_to_plot(power_curve, samples=150, inverter_ids=[]):
     plot_object = io.BytesIO()
     fig.write_image(plot_object, format='png', engine='kaleido')
     plot_object.seek(0)
+    del fig
 
     return plot_object
